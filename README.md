@@ -125,4 +125,17 @@ $$
       cp /usr/lib/x86_64-linux-gnu/libstdc++.so.6 ./libstdc++.so.6.0.29
       ```
 
-      
+
+#### 2.1.1 Basic Usage
+
+- 什么是强化学习?
+  - 强化学习就像是通过试错进行教学: 一个智能体通过尝试动作，接受反馈 (奖励)，并逐渐改进行为来学习。
+  - 可以把它想象成用零食训练宠物、通过练习学骑自行车，或通过反复游玩掌握一款电子游戏。
+- 为什么使用 Gymnasium?
+  - 无论你是想训练智能体玩游戏、控制机器人，还是优化交易策略，Gymnasium 都为你提供了构建和测试想法的工具
+  - Gymnasium 的核心是一套用于所有单智能体强化学习环境的 API，并实现了常见的环境，如: CartPOle, Pendulum, MountainCar, Mujoco, Atari等
+  -  Gymnasium 提供了四个关键函数: `make()`, `Env.reset()`, `Env.step()`, `Env.render()`
+  - Gymnasium 的核心是 `Env`, 这是一个高级的 Python 类，表示强化学习理论中的马尔科夫决策过程 (MDP), *注意: 这不是对MDP的完全还原，缺少一些组成部分*
+    - 这个类是的用户能够开始一轮新的交互、执行动作并可视化智能体的当前状态
+  - 除了 `Env` 之外，Gymnasium 还提供了 `Wrapper`， 用于增强或修改环境，特别是对智能体的观察值、奖励以及所采取的动作
+
