@@ -19,6 +19,7 @@ total_reward = 0
 while not episode_over:
     # Choose an action: 0 = push cart left, 1 = push cart right
     action = env.action_space.sample()  # Random action for now - real agents will be smarter!
+    print(action)
 
     # Take the action and see what happens
     observation, reward, terminated, truncated, info = env.step(action)
