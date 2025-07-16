@@ -1,12 +1,13 @@
 import gymnasium as gym
 from collections import defaultdict
-import numpy as np  
+import numpy as np
 from tqdm import tqdm
 from matplotlib import pyplot as plt
 
+
 class BlackjackAgent:
     def __init__(
-        self, 
+        self,
         env: gym.Env,
         learning_rate: float,
         initial_epsilon: float,
@@ -14,8 +15,8 @@ class BlackjackAgent:
         final_epsilon: float,
         discount_factor: float,
     ):
-        """ Initialize the Blackjack agent.
-        
+        """Initialize the Blackjack agent.
+
         Args:
             env (gym.Env): The Blackjack environment.
             learning_rate (float): How quickly to update Q-values (0-1)
@@ -25,7 +26,7 @@ class BlackjackAgent:
             discount_factor (float): How much to value future rewards (0-1)
         """
         self.env = env
-        
+
         # Q_Table: maps(state, action) -> Q-value
         # defaultdict automatically creates a new entry with 0.0 if not found
         # print(env.action_space.n)  # 2
@@ -43,11 +44,11 @@ class BlackjackAgent:
         self.training_error = []
 
     def get_action(self, obs: tuple[int, int, bool]) -> int:
-        """ Choose an action based on epsilon-greedy policy.
-        
+        """Choose an action based on epsilon-greedy policy.
+
         Args:
             obs (tuple): Current observation (player_sum, dealer_card, usable_ace)
-        
+
         Returns:
             int: Action to take (0 = stand, 1 = hit)
         """
@@ -58,17 +59,17 @@ class BlackjackAgent:
         else:
             # 如果不存在 Q-value for this state, defaultdict 会默认调用 lambda 返回一个零向量
             return int(np.argmax(self.q_values[obs]))
-        
+
     def update(
-        self, 
+        self,
         obs: tuple[int, int, bool],
         action: int,
         reward: float,
         terminated: bool,
-        next_obs: tuple[int, int, bool]
+        next_obs: tuple[int, int, bool],
     ):
-        """ Update Q-values based on the action taken and the reward received.
-        
+        """Update Q-values based on the action taken and the reward received.
+
         Args:
             obs (tuple): Current observation (player_sum, dealer_card, usable_ace)
             action (int): Action taken (0 = stand, 1 = hit)
@@ -91,7 +92,7 @@ class BlackjackAgent:
             self.q_values[obs][action] + self.lr * temporal_difference
         )
 
-         # Track learning progress (useful for debugging)
+        # Track learning progress (useful for debugging)
         self.training_error.append(temporal_difference)
 
     def decay_epsilon(self):
@@ -105,7 +106,7 @@ def train(
     start_epsilon=1.0,
     final_epsilon=0.1,
 ):
-    """ 训练 Agent
+    """训练 Agent
     Args:
         lr (float): How fast to learn (higher = faster but less stable)
         n_episodes (int): Number of hands to practice
@@ -116,19 +117,19 @@ def train(
 
     env = gym.make("Blackjack-v1", sab=False)
 
-    env=gym.wrappers.RecordEpisodeStatistics(env, buffer_length=n_episodes)
+    env = gym.wrappers.RecordEpisodeStatistics(env, buffer_length=n_episodes)
     agent = BlackjackAgent(
         env=env,
         learning_rate=lr,
         initial_epsilon=start_epsilon,
         epsilon_decay=epsilon_decay,
         final_epsilon=final_epsilon,
-        discount_factor=0.99
+        discount_factor=0.99,
     )
 
-    print('=' * 90)
-    print('Agent 0-shot')
-    print('=' * 90)
+    print("=" * 90)
+    print("Agent 0-shot")
+    print("=" * 90)
     test(agent)
 
     for episode in tqdm(range(n_episodes), desc="Training"):
@@ -142,27 +143,25 @@ def train(
             done = terminated or truncated
         agent.decay_epsilon()
 
-    print('=' * 90)
-    print('Agent full-trained')
-    print('=' * 90)
+    print("=" * 90)
+    print("Agent full-trained")
+    print("=" * 90)
     test(agent)
     visualize(agent)
 
 
-    
 def visualize(agent):
     """可视化训练过程"""
-    def get_moving_avgs(arr, window, convolution_mode='valid'):
+
+    def get_moving_avgs(arr, window, convolution_mode="valid"):
         """计算移动平均值来平滑噪音数据"""
         # np.array(arr).flatten() 将 arr 转为 numpy 数组并展平
         # np.ones(window)  生成一个长度为 window 的数组，值全是1
         # np.convolve(..., mode=convolution_mode) 对前面的两个数组做加权平均，权重都为1,相当于滑动求和
-        return np.convolve(
-            np.array(arr).flatten(),
-            np.ones(window),
-            mode=convolution_mode
-        ) / window
-
+        return (
+            np.convolve(np.array(arr).flatten(), np.ones(window), mode=convolution_mode)
+            / window
+        )
 
     # 定义滑动窗口长度为 500，用来平滑图像曲线
     rolling_length = 500
@@ -173,9 +172,7 @@ def visualize(agent):
     # 奖励相关可视化
     axs[0].set_title("Episode rewards")
     reward_moving_average = get_moving_avgs(
-        agent.env.return_queue,
-        rolling_length,
-        "valid"
+        agent.env.return_queue, rolling_length, "valid"
     )
     axs[0].plot(range(len(reward_moving_average)), reward_moving_average)
     axs[0].set_ylabel("Average Reward")
@@ -184,9 +181,7 @@ def visualize(agent):
     # 回合数相关可视化
     axs[1].set_title("Episode lengths")
     length_moving_average = get_moving_avgs(
-        agent.env.length_queue,
-        rolling_length,
-        "valid"
+        agent.env.length_queue, rolling_length, "valid"
     )
     axs[1].plot(range(len(length_moving_average)), length_moving_average)
     axs[1].set_ylabel("Average Reward")
@@ -195,11 +190,11 @@ def visualize(agent):
     # 训练误差
     axs[2].set_title("Training Error")
     training_error_moving_average = get_moving_avgs(
-        agent.training_error,
-        rolling_length,
-        "same"
+        agent.training_error, rolling_length, "same"
     )
-    axs[2].plot(range(len(training_error_moving_average)), training_error_moving_average)
+    axs[2].plot(
+        range(len(training_error_moving_average)), training_error_moving_average
+    )
     axs[2].set_ylabel("Temporal Difference Error")
     axs[2].set_xlabel("Step")
 
@@ -225,13 +220,13 @@ def test(agent, num_episodes=1000):
             obs, reward, terminated, truncated, info = env.step(action)
             episode_reward += reward
             done = terminated or truncated
-        
+
         total_rewards.append(episode_reward)
-    
+
     # 恢复agent的探索率
     agent.epsilon = old_epsilon
 
-    win_rate = np.mean(np.array(total_rewards)>0)
+    win_rate = np.mean(np.array(total_rewards) > 0)
     average_reward = np.mean(total_rewards)
 
     print(f"Test Results over {num_episodes} episodes:")
@@ -247,12 +242,14 @@ def play():
     epsoide_over = False
     while not epsoide_over:
         # action = env.action_space.sample()  # Random action for now
-        print('=' * 90)
-        action = int(input("Your Choice (0: stand, 1: hit): "))  # Wait for user input to proceed
+        print("=" * 90)
+        action = int(
+            input("Your Choice (0: stand, 1: hit): ")
+        )  # Wait for user input to proceed
         if action not in [0, 1]:
             print("Invalid action! Please choose 0 (stand) or 1 (hit).")
             continue
-        
+
         # observation: (player_sum, dealer_card, usable_ace)
         observation, reward, terminated, truncated, info = env.step(action)
 
@@ -260,12 +257,12 @@ def play():
         total_reward
         epsoide_over = terminated or truncated
 
-    print(f'Episode finished! Total reward: {total_reward}')
-
+    print(f"Episode finished! Total reward: {total_reward}")
 
 
 def main():
     train()
+
 
 if __name__ == "__main__":
     main()
