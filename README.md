@@ -7,7 +7,7 @@
 ### 1.1 马尔科夫决策过程 (MDP)
 - MDP 是 RL 的数学基础，由一个五元组构成:
     $$
-        MDP = (\mathcal{S}, \mathcal{A}, \mathcal{P}, \mathcal{R}, \gamma)
+    MDP = (\mathcal{S}, \mathcal{A}, \mathcal{P}, \mathcal{R}, \gamma)
     $$
 
 - 符号含义如下:
@@ -333,6 +333,7 @@ $$
   - 当我们谈论训练一个强化学习 (RL) 智能体时，我们是在通过经验教它作出好的决策
   - 与监督学习不同，在监督学习中我们会展示正确答案的示例，而强化学习的智能体是通过尝试不同的动作并观察结果来学习的，就像是骑自行车，你尝试不同的动作，摔倒几次，逐渐学会什么是有效的
   - 强化学习的最终目标是学习一个 **策略 (Policy)**， 一种告诉智能体在每种情况下应如何采取何种动作以最大化长期回报的策略
+
 - 直观理解 Q-Learning
   - 在本教程中将使用 `Q-learning` 来解决 Blackjack (黑杰克) 环境，首先我们需要理解 Q-learning 是如何工作的
   - Q-learning 会构建一张巨大的 "秘籍表", 称为 Q表 (Q-table), 告诉智能体在每种情况下采取每个动作的好坏
@@ -352,6 +353,7 @@ $$
       - 利用 (exploitation): 选择你已知效果最好的动作
   - 为什么有效？
     - 随着时间推移，好的动作会拥有更高的 Q-value, 差的动作则拥有更低的 Q-alue，最终智能体学会选择预期奖励最高的动作，从而实现最有策略
+
 - 了解环境: BlackJack
   - BlackJack是最受欢迎的赌场纸牌游戏之一，同时也是强化学习的绝佳入门环境，其包括一下特点：
     - 规则清晰：尽量让你的手牌总点数接近21,但不能超过，同时要比庄家高
@@ -360,4 +362,439 @@ $$
     - 即使反馈：每一局游戏结束后立即得知输赢或平局
   - 当前环境使用了 *无限副牌 (抽牌后放回)*, 因此无法通过记牌策略取胜，智能体只能通过试错方式学习最优策略
   - 环境细节
-    - 观察环境: 一个元组
+    - 观察空间 (Observation): 一个元组, 形式为 `(player_sum, dealer_card, usable_ace)`
+      - `player_sum`: 玩家当前手牌的总点数, (范围: 4 - 21)
+      - `dealer_card`: 庄家的明牌点数, (范围:1 - 10)
+      - `usable_ace`: 玩家是否有一个可用的 A, (布尔值, True/False)
+    - 动作空间 (Action): 
+      - `0`: 停牌 (Stand)
+      - `1`: 要牌 (Hit)
+    - 奖励 (Rewards):
+      - `+1`: 赢
+      - `-1`: 输
+      - `0`: 平局
+    - 回合结束条件 (Episode ends):
+      - 玩家选择停牌 (Stand)
+      - 玩家爆牌 (Bust: 点数超过21)
+
+- 执行动作
+
+  - 在通过 `env.reset()` 获得初始观察值之后，我们使用 `env.step(action)` 来与环境进行交互，这个函数接受一个动作并返回五个重要的值
+
+    ```python
+    observation, reward, terminated, truncated, info = env.step(action)
+    ```
+
+    - `observation`: 执行该动作后，智能体看到的环境状态
+    - `reward`: 该动作带来的即时反馈
+    - `terminated`: 表示该回合是否自然结束
+    - `truncated`: 表示该回合是否因时间限制等外部原因被中止
+    - `info`: 附加调试信息
+
+  - 关键点: `reward` 仅告诉我们**当前动作的即时好坏**，但智能体需要学习的是**长期结果的好坏** 
+
+  - Q-Learning的核心就是通过估算**总的未来奖励 (累计回报),** 而不是仅仅依赖即时奖励, 从而作出更优的决策
+
+- 构建一个 Q-Learning Agent
+
+  - 构建一个智能体，需要实现以下几个关键功能: 
+
+    - 选择动作 (探索 / 利用)
+    - 从经验中学习 (更新 Q 值)
+    - 管理探索程度 （随着时间推移降低随机性）
+
+  - Exploration vs. Exploitation
+
+    - 探索和利用是强化学习的一个核心问题
+      - 探索 (Exploration): 尝试新动作, 以了解环境可能的反馈
+      - 利用 (Exploitation): 使用已有的知识选择当前来看最好的动作，以获得最大回报
+    - $\epsilon$-贪婪策略: 我们通常使用 $\epsilon$-贪婪策略 来在探索和利用之间做权衡
+      - 以概率 $\epsilon$: 随机选择一个动作 (探索)
+      - 以概率 $1-\epsilon$: 选择当前Q值最高的动作 (利用)
+    -  实践建议: 从较高的 $\epsilon$ 开始 (鼓励多探索), 随着学习过程的推进逐渐降低 $\epsilon$ 值 (逐步转向利用)
+
+  - BlackjackAgent 的代码实现
+
+    ```python
+    import gymnasium as gym
+    from collections import defaultdict
+    import numpy as np  
+    
+    class BlackjackAgent:
+        def __init__(
+            self, 
+            env: gym.Env,
+            learning_rate: float,
+            initial_epsilon: float,
+            epsilon_decay: float,
+            final_epsilon: float,
+            discount_factor: float,
+        ):
+            """ Initialize the Blackjack agent.
+            
+            Args:
+                env (gym.Env): The Blackjack environment.
+                learning_rate (float): How quickly to update Q-values (0-1)
+                initial_epsilon (float): Starting exploration rate (usually 1.0)
+                epsilon_decay (float): How much to reduce epsilon each episode
+                final_epsilon (float): Minimum exploration rate (usually 0.1)
+                discount_factor (float): How much to value future rewards (0-1)
+            """
+            self.env = env
+            
+            # Q_Table: maps(state, action) -> Q-value
+            # defaultdict automatically creates a new entry with 0.0 if not found
+            # print(env.action_space.n)  # 2
+            self.q_values = defaultdict(lambda: np.zeros(env.action_space.n))
+    
+            self.lr = learning_rate
+            self.discount_factor = discount_factor
+    
+            # exploration parameters
+            self.epsilon = initial_epsilon
+            self.epsilon_decay = epsilon_decay
+            self.final_epsilon = final_epsilon
+    
+            # Trace learning progress
+            self.training_error = []
+    
+        def get_action(self, obs: tuple[int, int, bool]) -> int:
+            """ Choose an action based on epsilon-greedy policy.
+            
+            Args:
+                obs (tuple): Current observation (player_sum, dealer_card, usable_ace)
+            
+            Returns:
+                int: Action to take (0 = stand, 1 = hit)
+            """
+    
+            # expoloration
+            if np.random.random() < self.epsilon:
+                return self.env.action_space.sample()
+            else:
+                # 如果不存在 Q-value for this state, defaultdict 会默认调用 lambda 返回一个零向量
+                return int(np.argmax(self.q_values[obs]))
+            
+        def update(
+            self, 
+            obs: tuple[int, int, bool],
+            action: int,
+            reward: float,
+            terminated: bool,
+            next_obs: tuple[int, int, bool]
+        ):
+            """ Update Q-values based on the action taken and the reward received.
+            
+            Args:
+                obs (tuple): Current observation (player_sum, dealer_card, usable_ace)
+                action (int): Action taken (0 = stand, 1 = hit)
+                reward (float): Reward received after taking the action
+                terminated (bool): Whether the episode has ended
+                next_obs (tuple): Next observation after taking the action
+            """
+    
+            # 计算未来最大收益
+            future_q_value = (not terminated) * np.max(self.q_values[next_obs])
+    
+            finual_q_value = reward + self.discount_factor * future_q_value
+    
+            # how wrong was our current estimate?
+            temporal_difference = finual_q_value - self.q_values[obs][action]
+    
+            # Update our estimate in the direction of the error
+            # Learning rate controls how big steps we take
+            self.q_values[obs][action] = (
+                self.q_values[obs][action] + self.lr * temporal_difference
+            )
+    
+             # Track learning progress (useful for debugging)
+            self.training_error.append(temporal_difference)
+    
+        def decay_epsilon(self):
+            """Reduce exploration rate after each episode."""
+            self.epsilon = max(self.final_epsilon, self.epsilon - self.epsilon_decay)
+    ```
+
+  - 理解 Q-Learnng
+
+    - 目标：找到一个最优策略，使得智能体 在每个状态下选择动作都能获得最大的长期累计奖励 (即最大Q-Value)
+
+    - 背后的数学思想是：贝尔曼方程 (Bellman Equation), 公式形式如下:
+      $$
+      Q(s,a)\leftarrow Q(s,a)+\alpha[r+\gamma\ max_{a \prime}Q(s\prime,a\prime)-Q(s,a)]
+      $$
+
+      - $Q(s,a)$: 表示在状态 s 下采取动作 a 得到的 Q值
+      - $\alpha$: 表示学习率，表示更新Q值的速率
+      - $r$: 表示当前动作获得奖励
+      - $\gamma$: 表示折扣因子，代表未来最大奖励的权重，权重越大越考虑长期累计奖励
+
+    - 代码详解
+
+      ```python
+      # 当前估计：Q(状态, 动作)
+      current_q = self.q_values[obs][action]
+      
+      # 实际经历到的结果：即时奖励 + 折扣后的未来最大奖励
+      target = reward + self.discount_factor * max(self.q_values[next_obs])
+      
+      # 我们的误差有多大？
+      error = target - current_q
+      
+      # 更新估计值：朝目标值靠近一点
+      new_q = current_q + learning_rate * error
+      ```
+
+    - 关键含义是：一个状态-动作对的价值应该等于当前获得的奖励+未来最优行为的折扣价值
+
+    - 一开始我们的未来最优行为的Q值是零初始化的，但是一开始模型倾向于探索而非利用，逐渐探索到比较好的最又行为，从而推动优化
+
+- 训练 Agent
+
+  - 训练流程:
+
+    1. 重置环境：开始新的一轮游戏
+    2. 玩完整的一轮游戏 (epsiode): 选择动作，并从每一步中学习
+    3. 更新探索率 (逐渐减少 epsilon)
+    4. 重复很多轮游戏来学习好的策略
+
+  - 代码
+
+    ```python
+    def train(
+        lr=0.01,
+        n_episodes=100_000,
+        start_epsilon=1.0,
+        final_epsilon=0.1,
+    ):
+        """ 训练 Agent
+        Args:
+            lr (float): How fast to learn (higher = faster but less stable)
+            n_episodes (int): Number of hands to practice
+            start_epsilon (float): Start with 100% random actions
+            final_epsilon (float): Always keep some exploration
+        """
+        from tqdm import tqdm
+        
+        epsilon_decay = start_epsilon / (n_episodes/2)
+        
+        env = gym.make("Blackjack-v1", sab=False)
+        env=gym.wrappers.RecordEpisodeStatistics(env, buffer_length=n_episodes)
+        
+        agent = BlackjackAgent(
+            env=env,
+            learning_rate=lr,
+            initial_epsilon=start_epsilon,
+            epsilon_decay=epsilon_decay,
+            final_epsilon=final_epsilon,
+            discount_factor=0.99
+        )
+    
+        for episode in tqdm(range(n_episodes), desc="Training"):
+            # 开始新的一轮游戏
+            obs, _ = env.reset()
+            done = False
+            
+            # 完成完整的一轮
+            while not done:
+                # Agent选择一个动作 (一开始比较随机，之后逐渐智能)
+                action = agent.get_action(obs)
+                
+                # 采取动作后，的观察结果，奖励等
+                next_obs, reward, terminated, truncated, _ = env.step(action)
+                
+                # agent 从返回值中学习
+                agent.update(obs, action, reward, terminated, next_obs)
+    			
+                # 进行下一步
+                done = terminated or truncated
+                obs = next_obs
+            
+            # 减少探索率
+            agent.decay_epsilon()
+    
+    ```
+
+  - 训练过程中会发生什么？
+
+    - 早期阶段 (第0-10,000局)
+      - 智能体的行为大多数是随机的 (因为 $\epsilon$ 很高)
+      - 胜率约为 43%
+      - Q值非常不准
+    - 中期阶段 (第10,000-50,000局)
+      - 智能体开始发现有效策略
+      - 胜率提升至45%-48%
+      - 随着估计值变得更准确，学习误差开始下降
+    - 后期阶段 (第50,000局之后)
+      - 智能体逐渐收敛到近似最优策略
+      - 胜率趋于稳定到49%左右，这是该环境下的理论上限
+      - Q值逐渐稳定，学习误差变得非常小
+
+- 分析训练结果
+
+  - 可视化训练过程
+
+    ```python
+    def visualize(agent):
+        """可视化训练过程"""
+        def get_moving_avgs(arr, window, convolution_mode='valid'):
+            """计算移动平均值来平滑噪音数据"""
+            # np.array(arr).flatten() 将 arr 转为 numpy 数组并展平
+            # np.ones(window)  生成一个长度为 window 的数组，值全是1
+            # np.convolve(..., mode=convolution_mode) 对前面的两个数组做加权平均，权重都为1,相当于滑动求和
+            return np.convolve(
+                np.array(arr).flatten(),
+                np.ones(window),
+                mode=convolution_mode
+            ) / window
+    
+        from matplotlib import pyplot as plt
+    
+        # 定义滑动窗口长度为 500，用来平滑图像曲线
+        rolling_length = 500
+    
+        # 创建3列子图，分别用于绘制奖励、回合长度、训练误差
+        fig, axs = plt.subplots(ncols=3, figsize=(12, 5))
+    
+        # 奖励相关可视化
+        axs[0].set_title("Episode rewards")
+        reward_moving_average = get_moving_avgs(
+            agent.env.return_queue,
+            rolling_length,
+            "valid"
+        )
+        axs[0].plot(range(len(reward_moving_average)), reward_moving_average)
+        axs[0].set_ylabel("Average Reward")
+        axs[0].set_xlabel("Episode")
+    
+        # 回合数相关可视化
+        axs[1].set_title("Episode lengths")
+        length_moving_average = get_moving_avgs(
+            agent.env.length_queue,
+            rolling_length,
+            "valid"
+        )
+        axs[1].plot(range(len(length_moving_average)), length_moving_average)
+        axs[1].set_ylabel("Average Reward")
+        axs[1].set_xlabel("Episode")
+    
+        # 训练误差
+        axs[2].set_title("Training Error")
+        training_error_moving_average = get_moving_avgs(
+            agent.training_error,
+            rolling_length,
+            "same"
+        )
+        axs[2].plot(range(len(training_error_moving_average)), training_error_moving_average)
+        axs[2].set_ylabel("Temporal Difference Error")
+        axs[2].set_xlabel("Step")
+    
+        plt.tight_layout()
+        plt.show()
+    ```
+
+  - 可视化解释
+
+    - 奖励图 (Reward Plot): 奖励图应该显示出从负值逐渐接近0，Blackjack是一款本身就不利于玩家的游戏，即使是完美策略，也会因为赌场优势而略微亏损
+    - 每局动作数 (Episode length): 回合长度应该稳定在每局2-3个动作之间，如果非常短说明agent过早选择stand，如果非常长，说明agent过度使用hit
+    - 训练误差 (Training Error / TD Error): 
+    - 训练误差应当随时间逐渐减小，说明 agent 对环境的预测变得更准确，在训练早期出现较大波动是正常的，因为 agent 遇到很多新情况
+
+- 训练常见问题及解决
+
+  - Agent 没有进步 (Reward 一直没变化)
+    - 症状: 平均奖励保持不变; TD误差一直很大; 学了很多轮但表现没有任何提升
+    - 可能原因: 学习率太高或太低; 奖励设计不合理; Q表没更新, 因为逻辑写错了
+    - 解决方法: 尝试学习率在 0.001 - 0.1 之间; 确保 Blackjack 的奖励是合理的
+    - 打印调试信息确认 Q表真的在变化
+  - 训练过程不稳定
+    - 症状: 奖励忽高忽低; 表现波动剧烈, 难以收敛
+    - 可能原因: 学习率太高; 探索不足, agent陷入局部策略
+    - 解决方法: 减少学习率, 设置最低探索概率 $finlal\_\epsilon \ge 0.05$; 多训练一些回合让策略更稳定
+  - Agent 被卡在错误策略中
+    - 症状: 一开始表现提升, 但后期停滞; 1最终策略表现明显不优
+    - 可能原因: 探索太少, 太早exploitation; 学习率太低, 更新缓慢
+    - 解决方法: 降低 epsilon 衰减速度; 初始时设置更高的学习率; 使用不同的探索方法, 如乐观初始化Q表, 把Q值设的很高
+  - 学习太慢
+    - 症状: 能学但是学的很慢; 奖励缓慢上升或者TD误差下降非常缓慢
+    - 可能原因: 学习率台地; 探索太多(比如epsilon太大，一直在试探)
+    - 解决方法: 稍微调高学习率, 更快地降低epsilon, 聚焦训练困难的状态(加权训练, 修改奖励函数)
+
+- 测试 Agent
+
+  - 代码:
+
+    ```python
+    def test(agent, num_episodes=1000):
+        """测试 Agent的表现"""
+        total_rewards = []
+        env = agent.env
+    
+        # 不让模型探索
+        old_epsilon = agent.epsilon
+        agent.epsilon = 0.0
+    
+        for episode in tqdm(range(num_episodes), desc="Test"):
+            obs, info = env.reset()
+            episode_reward = 0
+            done = False
+            while not done:
+                action = agent.get_action(obs)
+                obs, reward, terminated, truncated, info = env.step(action)
+                episode_reward += reward
+                done = terminated or truncated
+            
+            total_rewards.append(episode_reward)
+        
+        # 恢复agent的探索率
+        agent.epsilon = old_epsilon
+    
+        win_rate = np.mean(np.array(total_rewards)>0)
+        average_reward = np.mean(total_rewards)
+    
+        print(f"Test Results over {num_episodes} episodes:")
+        print(f"Win Rate: {win_rate:.1%}")
+        print(f"Average Reward: {average_reward:.3f}")
+        print(f"Standard Deviation: {np.std(total_rewards):.3f}")
+        
+        
+        """
+        =================
+        Agent 0-shot
+        =================
+        Test: 100%|█████████████████████████████████████████████████████| 1000/1000 [00:00<00:00, 6711.57it/s]
+        Test Results over 1000 episodes:
+        Win Rate: 37.0%
+        Average Reward: -0.211
+        Standard Deviation: 0.952
+        Training: 100%|███████████████████████████████████████████| 1000000/1000000 [02:03<00:00, 8126.45it/s]
+        =======================
+        Agent full-trained
+        =======================
+        Test: 100%|█████████████████████████████████████████████████████| 1000/1000 [00:00<00:00, 7755.09it/s]
+        Test Results over 1000 episodes:
+        Win Rate: 43.0%
+        Average Reward: -0.039
+        Standard Deviation: 0.947
+        """
+    ```
+
+  - 一个好的 Blackjack Agent 应该表现为 :
+
+    - 胜率: 42 - 45%
+    - 平均奖励: -0.02 - 0.01
+    - 标准差: 越小越好 (<0.5较为理想)
+
+- 下一步:
+
+  - 上面已经通过Q-Learning完成了Blackjack Agent的训练，接下来可以挑战复杂或不同类型的环境
+    - `CartPole-v1`: 经典平衡问题, 适合理解连续控制
+    - `MountainCar`: 目标是让小车爬上山, 需要有耐心的积累动量
+    - `LunarLander-v2`: 控制飞船平稳着陆, 更有挑战性, 适合离散动作策略
+  - 调整超参
+    - 强化学习对超参非常敏感，可以尝试不同的学习率, 不同的探索策略
+  - 尝试其他算法: SARSA, Expected SARSA, Monte Carlo, Double Q-Learning
+  - 使用函数逼近方法，如果状态空间太大, Q-table不再适用, 可以用神经网络代替表格
+  - 自定义环境: 设计自己的强化学习问题
+
+- 
